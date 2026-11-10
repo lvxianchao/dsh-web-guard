@@ -298,7 +298,9 @@ export function apply(ctx: HostContext, config: Partial<GuardConfig> = {}): { st
     const pending = (async (): Promise<string> => {
       try {
         const url = ctx.connection.authenticatedUrl(`${targetOrigin}/`)
-        const res = await fetch(url, { redirect: 'manual' })
+        // Bound the exchange: an unanswered fetch would otherwise stay
+        // `inflight` forever and stall every request that awaits it.
+        const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
         const parts = res.headers.getSetCookie()
         const value = parts.map((line) => line.split(';')[0]).filter(Boolean).join('; ')
         if (!value) throw new Error(`launch-token exchange returned ${res.status} without a cookie`)

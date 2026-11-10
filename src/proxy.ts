@@ -137,7 +137,17 @@ export function forward(req: IncomingMessage, res: ServerResponse, options: Forw
   const proxyReq = secure
     ? https.request(requestOptions, (proxyRes) => forwardResponse(proxyRes, res, req, started, log))
     : http.request(requestOptions, (proxyRes) => forwardResponse(proxyRes, res, req, started, log))
+  // A browser can walk away mid-response (tab closed, reload, flaky link).
+  // Without this the upstream request survives the client, and a response that
+  // never ends — an SSE stream, a long poll — keeps its socket allocated in the
+  // shared keep-alive agent forever. Once `maxSockets` of those pile up every
+  // later request queues until the proxy in front gives up (504).
+  res.on('close', () => {
+    if (!res.writableEnded) proxyReq.destroy()
+  })
   proxyReq.on('error', (err: Error) => {
+    // Destroying the upstream is the expected outcome of a client hangup.
+    if (res.destroyed || res.writableEnded) return
     log(`upstream error ${req.method} ${req.url}: ${err.message}`)
     if (!res.headersSent) {
       res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' })
@@ -150,10 +160,15 @@ export function forward(req: IncomingMessage, res: ServerResponse, options: Forw
 }
 
 function forwardResponse(proxyRes: IncomingMessage, res: ServerResponse, req: IncomingMessage, started: number, log: (line: string) => void): void {
+  if (res.destroyed) {
+    proxyRes.destroy()
+    return
+  }
   const headers: OutgoingHttpHeaders = { ...proxyRes.headers }
   // Never leak the harness cookie to the browser: the guard owns it.
   delete headers['set-cookie']
   res.writeHead(proxyRes.statusCode ?? 502, headers)
+  proxyRes.on('error', () => res.destroy())
   proxyRes.pipe(res)
   // Quiet by default: the Web UI polls constantly. Log failures and slow
   // requests only, so the journal does not fill with 200s.
