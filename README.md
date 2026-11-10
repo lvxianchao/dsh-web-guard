@@ -23,7 +23,7 @@
 | Problem | Vanilla behaviour | dsh-web-guard |
 |---|---|---|
 | No human login | A per-process `?token=` printed to the terminal, new on every restart | One password + revocable sessions |
-| `/api` returns 403 behind a proxy | The browser-trust fence requires `Host` to arrive unrewritten; NPM/Caddy rewrite it | The proxy rewrites `Host`/`Origin` to the loopback authority, which the fence accepts |
+| `/api` returns 403 behind a proxy | The browser-trust fence requires `Host` to arrive unrewritten; NPM/Caddy rewrite it | The proxy rewrites `Host`/`Origin` to the loopback authority and drops `Referer`, so the fence and loopback-checking plugins both accept it |
 | Token lives in the journal | `journalctl \| grep token` before you can get in | Exchanged in-process; the browser never sees a token |
 | UI breaks on plain HTTP | `crypto.randomUUID is not a function` outside a secure context | Injects a `getRandomValues` polyfill |
 
@@ -51,7 +51,7 @@ Requires **DeepSeek Harness `0.2.2-rc.1` or newer** (`engines.dsh: >=0.2.2-rc.1 
 browser ──HTTP(S)──> dsh-web-guard :3081 ──> DSH listener (loopback)
                           │
                           ├─ not signed in → /login
-                          ├─ signed in → forward, Host/Origin rewritten to loopback
+                          ├─ signed in → forward, Host/Origin rewritten to loopback, Referer dropped
                           └─ injects the harness cookie (never exposed to the browser)
 ```
 
@@ -232,6 +232,7 @@ The page renders inside the harness React tree, so it inherits the harness light
 | Login succeeds then bounces back | Clock skew between the client and the host |
 | `randomUUID is not a function` | `polyfill` is disabled |
 | LAN can still reach the harness port | The harness is not bound to loopback — see the startup warning |
+| A plugin's own `/api/...` route answers `403` "loopback only" while the guard log shows the same 403 | **Before 3.0.2** the proxy forwarded `Referer` verbatim, so a plugin that re-checks `Origin \|\| Referer` saw the public authority instead of the loopback one | Upgrade to `>=3.0.2`: `Referer` is dropped like `Host`/`Origin` |
 | No **Settings → DSH Web Guard** entry | The host skipped the bundle: it is older than `0.2.2-rc.1`, or the page failed to load. Check `journalctl -u dsh-web | grep dsh-web-guard` and upgrade DSH |
 
 All log lines are prefixed `[dsh-web-guard]` and share the harness's journal stream. Successful requests are not logged (the Web UI polls constantly); only failures and slow requests are.

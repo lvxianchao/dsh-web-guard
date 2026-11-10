@@ -82,7 +82,7 @@ DSH_HOME=/tmp/dsh-shadow-home dsh --profile web --patch ./dev.local.yml --host 1
 GUARD_URL=http://127.0.0.1:3100 GUARD_PASSWORD=dev-only-password node test/e2e.mjs
 ```
 
-`test/e2e.mjs` submits one wrong password on purpose, so run it against a test instance when `maxAttempts` is low.
+`test/e2e.mjs` submits one wrong password on purpose, so run it against a test instance when `maxAttempts` is low. `npm run test:unit` needs neither a harness nor a password and covers the forwarded header set; `npm test` runs both.
 
 `lib/` is committed on purpose: npm tarballs, `github:` installs and checkout installs all serve the same prebuilt bytes. After changing `src/` run `npm run build` and commit `lib/`; CI fails when the artifacts are stale.
 
@@ -93,7 +93,7 @@ Release: bump `package.json` + add a CHANGELOG entry, `npm run build`, merge `de
 | Path | Role |
 | --- | --- |
 | `src/index.ts` | plugin body: config/state, router, JSON API, login form routes, gate listener |
-| `src/proxy.ts` | upstream forwarding and the `Host` / `Origin` loopback rewrite |
+| `src/proxy.ts` | upstream forwarding: the `Host` / `Origin` loopback rewrite and the `Referer` drop |
 | `src/auth.ts` | scrypt password hashing and the session table (SHA-256 digests, persisted cache) |
 | `src/page.ts`, `src/i18n.ts` | login / sign-out pages and en+zh strings (themed) |
 | `src/inject.ts`, `src/polyfill.ts` | session watchdog (`/__guard/session` probe) and the secure-context polyfill injected into the index |
@@ -104,6 +104,7 @@ Release: bump `package.json` + add a CHANGELOG entry, `npm run build`, merge `de
 | `src/client/api.ts`, `locales.ts`, `styles.ts` | fetch wrapper, zh/en copy, token-based CSS |
 | `scripts/build.mjs` | build: tsc for the server, esbuild for the single-file client bundle |
 | `test/e2e.mjs` | live checks against a running gate (needs `GUARD_PASSWORD`) |
+| `test/unit.mjs` | harness-free checks for the forwarded header set (`npm run test:unit`) |
 | `lib/` | committed build output (`index.js` + `client.js`) |
 | `docs/v3-architecture.md` | internal design note: slot contract, JSON API, work split |
 | `dev.yml`, `dev.local.yml` | shadow-instance overlays (`dev.local.yml` is gitignored) |

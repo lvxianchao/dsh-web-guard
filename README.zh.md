@@ -23,7 +23,7 @@
 | 麻烦 | 原生表现 | dsh-web-guard |
 |---|---|---|
 | 没有人类登录 | 只有进程启动时打印的 `?token=`，重启就换 | 一个访问密码 + 可吊销会话 |
-| 反代一律 403 | `/api` 栅栏要求 `Host` 原样转发，NPM/Caddy 通常会改写 | 代理把 `Host`/`Origin` 改写成回环 authority，天然放行 |
+| 反代一律 403 | `/api` 栅栏要求 `Host` 原样转发，NPM/Caddy 通常会改写 | 代理把 `Host`/`Origin` 改写成回环 authority 并丢掉 `Referer`，栅栏和做回环校验的插件都放行 |
 | token 要挖日志 | `journalctl \| grep token` 才能进站 | 进程内自动兑换，浏览器永远见不到 token |
 | 明文 HTTP 功能报错 | 非安全上下文下 `crypto.randomUUID is not a function` | 注入 polyfill 兜底 |
 
@@ -51,7 +51,7 @@
 浏览器 ──HTTP(S)──> dsh-web-guard :3081 ──> DSH 监听器 (回环)
                         │
                         ├─ 未登录：/login
-                        ├─ 已登录：转发，Host/Origin 改写为回环 authority
+                        ├─ 已登录：转发，Host/Origin 改写为回环 authority，丢弃 Referer
                         └─ 注入 DSH cookie（浏览器不可见）
 ```
 
@@ -226,6 +226,7 @@ node -e "import('./lib/auth.js').then(m=>console.log(m.hashPassword(process.argv
 | 登录后立刻弹回 | 客户端与主机时间偏差导致会话判定过期 |
 | 界面报 `randomUUID` | 把 `polyfill` 关掉了 |
 | 局域网能直连 DSH 端口 | DSH 绑的不是回环，见启动告警 |
+| 某插件自己的 `/api/...` 返回 403「只接受本机同源」，guard 日志里同样是 403 | **3.0.2 之前**代理原样转发 `Referer`，插件按 `Origin \|\| Referer` 判同源时看到的是公网 authority | 升级到 `>=3.0.2`：`Referer` 现在和 `Host`/`Origin` 一样被丢弃 |
 | 设置里找不到 DSH Web Guard | 宿主跳过了 bundle：版本低于 `0.2.2-rc.1`，或页面加载失败。查 `journalctl -u dsh-web \| grep dsh-web-guard`，并升级 DSH |
 
 日志统一带 `[dsh-web-guard]` 前缀，与 DSH 自身日志在同一个 journal 里。成功请求不记录（Web UI 会持续轮询），只记失败和慢请求。

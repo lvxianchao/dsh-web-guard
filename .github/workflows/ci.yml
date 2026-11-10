@@ -26,6 +26,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Unit checks (forwarded headers)
+        run: npm run test:unit
+
       - name: Built artifacts must be committed
         run: |
           if ! git diff --quiet -- lib; then

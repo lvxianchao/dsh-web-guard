@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.0.2 — 2026-11-10
+
+### Fixed
+
+- **The proxy no longer forwards the public `Referer` to the harness.** `Host` and `Origin` were rewritten to the loopback authority, but `Referer` was passed through verbatim, so the upstream still saw the address the browser used to reach the gate. A same-origin GET fetch sends no `Origin` — only `Referer` — so any plugin that adds its own "is this request from loopback" check (reading `Origin || Referer`) judged a legitimately forwarded request cross-origin and answered `403`: the plugin's settings page loaded, but every `GET /api/...` it issued failed within 1 ms while DSH itself kept working over `/api/remote.mux`. `referer` now joined `host`/`origin` in the dropped-header set. Dropping it rather than rewriting it is deliberate: the gate has already authenticated the request, and a fabricated loopback `Referer` would make a foreign document look same-origin.
+
+### Upgrade
+
+1. `dsh plugin --profile web add @lvxianchao/dsh-web-guard@3.0.2` (or reinstall from the same source you use).
+2. `sudo systemctl restart dsh-web` (or however the harness is supervised). Sessions survive the restart; open pages reconnect on their own.
+
+### Tests
+
+- New `npm run test:unit` (`test/unit.mjs`) asserts the forwarded header set — loopback `Host`/`Origin`, no fabricated `Origin`, no `Referer`, hop-by-hop headers stripped — and runs in CI. `npm test` now runs it before `test/e2e.mjs`.
+
 ## 3.0.1 — 2026-11-10
 
 ### Fixed

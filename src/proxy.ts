@@ -4,7 +4,8 @@
  * This module owns no authentication policy — the caller decides what to
  * forward. Its one job is to make an upstream DeepSeek Harness listener see a
  * loopback request: Host and Origin are rewritten to the upstream authority,
- * which is exactly what the /api browser-trust fence accepts.
+ * and Referer is dropped, since all three would otherwise carry the public
+ * authority the browser used to reach the gate.
  */
 import http from 'node:http'
 import https from 'node:https'
@@ -15,8 +16,19 @@ import type { IncomingHttpHeaders, IncomingMessage, OutgoingHttpHeaders, Request
 import type { Duplex } from 'node:stream'
 import { URL } from 'node:url'
 
-/** Headers never forwarded verbatim to the upstream. */
-const DROP = new Set(['host', 'origin', 'proxy-connection', 'connection', 'keep-alive', 'upgrade', 'transfer-encoding'])
+/**
+ * Headers never forwarded verbatim to the upstream.
+ *
+ * `referer` belongs here with `host`/`origin`: all three carry the public
+ * authority the browser used, while the rest are hop-by-hop headers the proxy
+ * owns. A plugin that re-checks "is this request same-origin from loopback"
+ * reads `Origin || Referer`; a same-origin GET fetch sends no Origin but does
+ * send Referer, so a verbatim public Referer makes an otherwise valid loopback
+ * request look cross-origin and 403. Dropping it is also the honest choice —
+ * the gate has already authenticated the request, and inventing a loopback
+ * Referer would silently make a foreign document look same-origin.
+ */
+const DROP = new Set(['host', 'origin', 'referer', 'proxy-connection', 'connection', 'keep-alive', 'upgrade', 'transfer-encoding'])
 
 /** Build the upstream header set with loopback authority substitution. */
 export function upstreamHeaders(headers: IncomingHttpHeaders, target: URL, cookie: string): OutgoingHttpHeaders {
