@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.0.1 — 2026-11-10
+
+### Fixed
+
+- **The proxy no longer leaks upstream sockets when a browser disconnects.** Closing a tab, reloading or dropping the link mid-response left the upstream request alive; for a response that never ends — an SSE stream, a long poll — the socket stayed allocated in the shared keep-alive agent forever. Once `maxSockets` (128) of them had accumulated, every later request through the proxy queued until the reverse proxy in front gave up with `504` — while `/__guard/session` kept answering 200, which made it look like the harness was up. The guard now destroys the upstream request when the client closes and treats the resulting error as expected instead of logging it.
+- **The launch-token exchange is bounded to 10 seconds.** An unanswered exchange used to stay `inflight` forever, stalling every request that awaited it.
+
+### Upgrade
+
+1. `dsh plugin --profile web add @lvxianchao/dsh-web-guard@3.0.1` (or reinstall from the same source you use).
+2. `sudo systemctl restart dsh-web` (or however the harness is supervised). Sessions survive the restart; open pages reconnect on their own.
+
 ## 3.0.0 — 2026-11-06
 
 ### Breaking

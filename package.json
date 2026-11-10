@@ -1,6 +1,6 @@
 {
   "name": "@lvxianchao/dsh-web-guard",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Password login for the DeepSeek Harness Web UI, so it can be exposed on the internet: sign in from anywhere instead of chasing one-off tokens, with reverse-proxy quirks handled. Ships a native DSH settings page.",
   "type": "module",
   "main": "lib/index.js",
