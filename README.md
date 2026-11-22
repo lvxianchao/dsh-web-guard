@@ -31,6 +31,8 @@ Zero runtime dependencies (Node standard library only). The npm package ships pr
 
 Requires **DeepSeek Harness `0.2.2-rc.1` or newer** (`engines.dsh: >=0.2.2-rc.1 <0.3.0`). On an incompatible host the whole bundle is skipped — for a front door that means the gate does not start, so upgrade DSH rather than removing the plugin.
 
+Both harness generations are supported by one package, chosen at runtime. On the `0.2.2` line the guard exchanges the process launch token in-process and forwards the harness cookie. On `0.2.3` and newer it registers a credential verifier with `connection.authentication` instead, so the browser's own session cookie is the only credential in play — nothing to exchange, cache or leak. Operators see no difference.
+
 ## Screenshots
 
 <p align="center">

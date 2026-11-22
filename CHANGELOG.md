@@ -1,5 +1,25 @@
 # Changelog
 
+## 3.1.0 — 2026-11-22
+
+### Added
+
+- **Admission through the DSH `0.2.3` credential-verifier registry.** `0.2.3` replaced `connection.authenticatedUrl` with `connection.authentication`, an ordered registry of credential verifiers that every protected route — page, `/api`, WebSocket upgrade — is admitted through; the first live Peer wins. The guard now registers one that accepts its own session cookie and hands back an owner Peer, so on that line the browser's own cookie is the credential: no launch token, no in-process exchange, and no secret to cache or leak. Revocation, idle expiry and the sliding window keep resolving through the same session table the login form writes, so kicking a device still takes effect on the next request.
+- **Both harness generations run from one package.** The registry is resolved at runtime rather than declared in `inject` — an injected service that does not exist would stall the plugin forever on the older line. When it is absent, the guard keeps exchanging the process launch token exactly as `3.0.2` did, and the two paths are selected per process, not by a version string.
+
+### Fixed
+
+- The legacy exchange calls `authenticatedUrl` through the service object instead of a detached reference. `authenticatedUrl` reads private state off `this`, so a detached reference threw `Cannot read properties of undefined (reading 'browserAuth')` on every forwarded request after sign-in.
+
+### Upgrade
+
+1. `dsh plugin --profile web add @lvxianchao/dsh-web-guard@3.1.0` (or reinstall from the same source you use).
+2. `sudo systemctl restart dsh-web` (or however the harness is supervised). Sessions survive the restart; open pages reconnect on their own.
+
+### Tests
+
+- New `npm run test:admission` (`test/admission.mjs`) boots a mock host in both shapes and asserts the contract of each: with the registry (exactly one verifier, one owner Peer, cookie accepted on both the `Headers` and node-header carriers, anonymous/foreign/revoked cookies refused) and without it (no verifier, launch-token exchange attempted). It needs no DSH install, so both lines stay covered. `npm test` runs it between the unit and e2e suites.
+
 ## 3.0.2 — 2026-11-10
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "@lvxianchao/dsh-web-guard",
-  "version": "3.0.2",
+  "version": "3.1.0",
   "description": "Password login for the DeepSeek Harness Web UI, so it can be exposed on the internet: sign in from anywhere instead of chasing one-off tokens, with reverse-proxy quirks handled. Ships a native DSH settings page.",
   "type": "module",
   "main": "lib/index.js",
@@ -75,8 +75,9 @@
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json",
     "test:unit": "node test/unit.mjs",
+    "test:admission": "node test/admission.mjs",
     "test:e2e": "node test/e2e.mjs",
-    "test": "node test/unit.mjs && node test/e2e.mjs",
+    "test": "node test/unit.mjs && node test/admission.mjs && node test/e2e.mjs",
     "prepare": "npm run build"
   },
   "devDependencies": {

@@ -39,7 +39,7 @@ import type {
   UpdateSettingsRequest,
   UpdateSettingsResponse,
 } from './shared/api.js'
-import type { HostContext, ProfileContext } from './types/host.js'
+import type { AuthenticationRegistry, HostContext, ProfileContext } from './types/host.js'
 import type { PersistedSettings, PersistedState } from './types/state.js'
 
 export const name = 'dsh-web-guard'
@@ -166,6 +166,20 @@ function parseCookies(header: string | string[] | undefined): Record<string, str
   return out
 }
 
+/**
+ * Read the `Cookie` header out of whichever carrier the harness hands a
+ * credential verifier: a Fetch `Headers` instance for synthetic requests, a
+ * node header record for a real socket.
+ */
+function cookieHeaderOf(headers: unknown): string | string[] | undefined {
+  if (typeof Headers !== 'undefined' && headers instanceof Headers) return headers.get('cookie') ?? undefined
+  if (headers === null || typeof headers !== 'object') return undefined
+  const value = (headers as Record<string, unknown>).cookie
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string')
+  return undefined
+}
+
 function clientIp(req: IncomingMessage): string {
   const forwarded = req.headers['x-forwarded-for']
   if (typeof forwarded === 'string' && forwarded.length > 0) return forwarded.split(',')[0].trim()
@@ -280,6 +294,45 @@ export function apply(ctx: HostContext, config: Partial<GuardConfig> = {}): { st
   }
   const secureCookie = Boolean(cfg.tls?.certFile && cfg.tls?.keyFile)
 
+  // ── harness admission: two harness generations, one plugin ─────────────────
+  // 0.2.2 line — the harness accepts only its own browser cookie, so the guard
+  // exchanges the process launch token in-process and forwards that cookie
+  // (`upstreamCookie` below).
+  // 0.2.3 line — `connection.authenticatedUrl` is gone. Every protected route
+  // (page, `/api`, WebSocket upgrade) is admitted through
+  // `connection.authentication`, an ordered registry of credential verifiers,
+  // and the first live Peer wins. Registering a verifier that accepts this
+  // plugin's own session cookie admits the forward with no exchange at all:
+  // the browser's cookie IS the credential and travels upstream untouched.
+  // The registry is absent on 0.2.2, so it is resolved at runtime rather than
+  // declared in `inject` — an injection would stall the plugin on the older
+  // line forever.
+  const serviceOf = (name: string): unknown => {
+    try {
+      return ctx.get?.(name)
+    } catch {
+      return undefined
+    }
+  }
+  const authentication = serviceOf('connection.authentication') as AuthenticationRegistry | undefined
+  const guardPeer = typeof authentication?.register === 'function'
+    ? ctx.connection.createPeer?.({ principal: { kind: 'owner' } })
+    : undefined
+  const providerMode = guardPeer !== undefined && authentication !== undefined
+  let stopProvider: (() => Promise<void>) | undefined
+  if (authentication !== undefined && guardPeer !== undefined) {
+    stopProvider = authentication.register({
+      authenticate: (request) => {
+        const token = parseCookies(cookieHeaderOf(request.headers))[COOKIE]
+        if (!token) return undefined
+        // Resolve through the same table the login form writes, so revocation,
+        // idle expiry and the sliding window stay in one place.
+        return sessions.resolve(token) ? guardPeer : undefined
+      },
+    })
+    log('harness admission: connection.authentication provider (0.2.3+)')
+  }
+
   // The listener binds once at boot. Settings surfaces (native page, JSON API)
   // settings page, JSON API) report the *configured* values and flag a pending
   // restart when they disagree with what is actually listening, so saving a new
@@ -289,15 +342,26 @@ export function apply(ctx: HostContext, config: Partial<GuardConfig> = {}): { st
   const listenerRestartRequired = (): boolean =>
     configuredListener.host !== runningListener.host || configuredListener.port !== runningListener.port
 
-  // ── harness cookie: exchanged in-process, never exposed to the browser ─────
+  // ── upstream credential ────────────────────────────────────────────────────
+  // 0.2.2: a harness cookie exchanged in-process, never exposed to the browser.
+  // 0.2.3+: empty, meaning "forward the incoming Cookie header verbatim" — the
+  // verifier above is what accepts it, and `proxy.upstreamHeaders` only
+  // overrides the header when this value is non-empty.
   let cookieCache = { value: '', at: 0 }
   let inflight: Promise<string> | null = null
-  async function harnessCookie(force = false): Promise<string> {
+  async function upstreamCookie(force = false): Promise<string> {
+    if (providerMode) return ''
     if (!force && cookieCache.value && Date.now() - cookieCache.at < 30 * 60 * 1000) return cookieCache.value
     if (inflight) return inflight
     const pending = (async (): Promise<string> => {
       try {
-        const url = ctx.connection.authenticatedUrl(`${targetOrigin}/`)
+        const connection = ctx.connection
+        if (typeof connection.authenticatedUrl !== 'function') {
+          throw new Error('harness exposes neither connection.authentication nor connection.authenticatedUrl')
+        }
+        // Call through the service: the method reads its own private state, so
+        // detaching it (`const fn = connection.authenticatedUrl`) loses `this`.
+        const url = connection.authenticatedUrl(`${targetOrigin}/`)
         // Bound the exchange: an unanswered fetch would otherwise stay
         // `inflight` forever and stall every request that awaits it.
         const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
@@ -619,7 +683,7 @@ export function apply(ctx: HostContext, config: Partial<GuardConfig> = {}): { st
 
     let cookie: string
     try {
-      cookie = await harnessCookie()
+      cookie = await upstreamCookie()
     } catch (err) {
       warn(`harness cookie unavailable: ${err instanceof Error ? err.message : String(err)}`)
       return json(res, 503, { error: 'harness_unavailable', detail: err instanceof Error ? err.message : String(err) })
@@ -632,7 +696,7 @@ export function apply(ctx: HostContext, config: Partial<GuardConfig> = {}): { st
       socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
       return
     }
-    harnessCookie()
+    upstreamCookie()
       .then((cookie) => forwardUpgrade(req, socket, head, { targetOrigin, cookie, log }))
       .catch((err: unknown) => {
         warn(`upgrade blocked: ${err instanceof Error ? err.message : String(err)}`)
@@ -677,7 +741,12 @@ export function apply(ctx: HostContext, config: Partial<GuardConfig> = {}): { st
     }
   }, 'dsh-web-guard: listener')
 
-  return { stop: () => listener.close() }
+  return {
+    stop: () => {
+      void stopProvider?.().catch(() => {})
+      listener.close()
+    },
+  }
 }
 
 function isLoopback(host: string): boolean {

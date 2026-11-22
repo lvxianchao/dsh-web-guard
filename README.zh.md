@@ -31,6 +31,8 @@
 
 要求 **DeepSeek Harness `0.2.2-rc.1` 或更新版本**（`engines.dsh: >=0.2.2-rc.1 <0.3.0`）。宿主版本不匹配时整个 bundle 会被跳过——对一道前门来说等于闸门不启动，所以请升级 DSH，而不是删掉插件。
 
+同一个包同时支持两代宿主，运行时自动选择。`0.2.2` 线上闸门在进程内用启动 token 换取 harness cookie 再转发；`0.2.3` 及以后改为向 `connection.authentication` 注册一个凭据验证器，浏览器自己的会话 cookie 就是唯一凭据，不交换、不缓存、也没有额外的密钥可泄漏。运维方无感知。
+
 ## 截图
 
 <p align="center">

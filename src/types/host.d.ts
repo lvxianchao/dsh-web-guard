@@ -17,8 +17,32 @@ export interface WebServerService {
 }
 
 export interface ConnectionService {
-  /** Wrap a URL with the launch token the harness issued to this process. */
-  authenticatedUrl(url: string): string
+  /**
+   * Wrap a URL with the launch token the harness issued to this process.
+   * Present on the 0.2.2 line only — 0.2.3 removed it in favour of the
+   * credential-verifier registry below.
+   */
+  authenticatedUrl?(url: string): string
+  /**
+   * Create an in-process Peer (0.2.3+). Its `principal.kind` fixes the identity
+   * every call through it speaks for; `owner` is what the harness itself uses
+   * for its shared browser Peer.
+   */
+  createPeer?(options: { readonly principal: { readonly kind: 'owner' } }): unknown
+}
+
+/**
+ * Registry of credential verifiers introduced in 0.2.3 (`connection.authentication`).
+ * The harness asks every registration in order and adopts the first live Peer,
+ * so a plugin that returns one admits its own requests without touching the
+ * launch token or a harness cookie. Absent on the 0.2.2 line.
+ */
+export interface AuthenticationRegistry {
+  register(provider: {
+    authenticate(request: {
+      readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>
+    }): unknown
+  }): () => Promise<void>
 }
 
 export interface ProfileContext {
